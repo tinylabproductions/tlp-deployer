@@ -8,7 +8,7 @@ import com.typesafe.config.ConfigFactory
 import scala.util.Try
 
 object Main {
-  def main(args: Array[String]) = {
+  def main(args: Array[String]): Unit = {
     args match {
       case Array(configFileS, directoryToDeployS) =>
         Try {

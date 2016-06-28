@@ -5,11 +5,12 @@ import java.time.{LocalDateTime, ZoneId}
 import java.util.concurrent.TimeUnit
 
 import net.schmizz.sshj.SSHClient
-import net.schmizz.sshj.sftp.{RemoteResourceInfo, RemoteResourceFilter, FileMode, SFTPClient}
+import net.schmizz.sshj.sftp.{FileMode, RemoteResourceFilter, RemoteResourceInfo, SFTPClient}
 import utils.ZipUtils
 
 import scala.concurrent.duration._
 import scala.collection.JavaConverters._
+import scala.collection.parallel.immutable.ParVector
 import scala.util.Try
 
 /**
@@ -33,57 +34,56 @@ object Deployer {
 
     val zipName = s"${cfg.directoryToDeploy.getFileName}_${now.toString.replace(':', '_')}.zip"
     val zip = Paths.get(zipName)
-    time(s"Compressing '${cfg.directoryToDeploy}' to '$zip'") {
+    timed(s"Compressing '${cfg.directoryToDeploy}' to '$zip'") {
       ZipUtils.pack(cfg.directoryToDeploy, zip)
     }
 
     try {
-      val clients = time("Connecting") {
+      val clients = timed("Connecting") {
         cfg.server.hosts.par.map { host =>
           val ssh = SSH(host, cfg.server.user, cfg.server.knownHosts)
           Client(ssh, ssh.newSFTPClient(), host, cfg.server.timeout)
         }
       }
 
-      time(s"Checking if '${cfg.server.deployTo}' exists") {
-        clients.foreach(ensureDir(cfg.server.deployTo))
+      timed(clients, s"Checking if '${cfg.server.deployTo}' exists") {
+        ensureDir(cfg.server.deployTo)
       }
 
       val deploy = s"${cfg.server.deployTo}/$now"
-      time(s"Creating '$deploy'") {
-        clients.foreach(ensureDir(deploy))
-      }
+      timed(clients, s"Creating '$deploy'")(ensureDir(deploy))
+
       val deployZip = s"$deploy/$zipName"
-      time(s"Uploading '$zip' to '$deployZip'") {
-        clients.foreach(_.ftp.put(zip.toString, deployZip))
+      timed(clients, s"Uploading '$zip' (${zip.toFile.length()}) to '$deployZip'") {
+        _.ftp.put(zip.toString, deployZip)
       }
 
-      time(s"Extracting '$deployZip'") {
-        clients.foreach(_.cmd(s"unzip '$deployZip' -d '$deploy' && rm '$deployZip'"))
+      timed(clients, s"Extracting '$deployZip'") {
+        _.cmd(s"unzip '$deployZip' -d '$deploy' && rm '$deployZip'")
       }
 
       val currentLink = s"${cfg.server.deployTo}/current"
-      time(s"Linking '$currentLink' to '$deploy'") {
-        clients.foreach(_.cmd(s"ln -sfT '$deploy' '$currentLink'"))
+      timed(clients, s"Linking '$currentLink' to '$deploy'") {
+        _.cmd(s"ln -sfT '$deploy' '$currentLink'")
       }
 
-      time(s"Cleaning up old deploys (keeping ${cfg.server.oldReleasesToKeep} releases)") {
-        clients.foreach { c =>
-          val toDelete = c.ftp.ls(cfg.server.deployTo, new RemoteResourceFilter {
-            override def accept(resource: RemoteResourceInfo) = resource.isDirectory
-          }).asScala.
-            flatMap(r => Try((r, LocalDateTime.parse(r.getName))).toOption).
-            sortWith((a, b) => a._2.isBefore(b._2)).
-            map(_._1).
-            dropRight(cfg.server.oldReleasesToKeep)
+      timed(
+        clients, s"Cleaning up old deploys (keeping ${cfg.server.oldReleasesToKeep} releases)"
+      ) { c =>
+        val toDelete = c.ftp.ls(cfg.server.deployTo, new RemoteResourceFilter {
+          override def accept(resource: RemoteResourceInfo) = resource.isDirectory
+        }).asScala.
+          flatMap(r => Try((r, LocalDateTime.parse(r.getName))).toOption).
+          sortWith((a, b) => a._2.isBefore(b._2)).
+          map(_._1).
+          dropRight(cfg.server.oldReleasesToKeep)
 
-          if (toDelete.nonEmpty) {
-            val rmArgs = toDelete.map(_.getName).mkString("'", "' '", "'")
-            /* cd to a directory first to prevent accidental deletion of / in case something goes wrong
-             * http://serverfault.com/questions/587102/monday-morning-mistake-sudo-rm-rf-no-preserve-root */
-            val toDeleteS = s"cd '${cfg.server.deployTo}' && rm -rf $rmArgs"
-            c.cmd(toDeleteS)
-          }
+        if (toDelete.nonEmpty) {
+          val rmArgs = toDelete.map(_.getName).mkString("'", "' '", "'")
+          /* cd to a directory first to prevent accidental deletion of / in case something goes wrong
+           * http://serverfault.com/questions/587102/monday-morning-mistake-sudo-rm-rf-no-preserve-root */
+          val toDeleteS = s"cd '${cfg.server.deployTo}' && rm -rf $rmArgs"
+          c.cmd(toDeleteS)
         }
       }
     }
@@ -92,7 +92,7 @@ object Deployer {
     }
   }
 
-  private def time[A](msg: String)(f: => A): A = {
+  private def timed[A](msg: String)(f: => A): A = {
     print(s"$msg... ")
     System.out.flush()
     val start = System.currentTimeMillis()
@@ -101,6 +101,23 @@ object Deployer {
     println(s"[${time / 1000f}s]")
     ret
   }
+
+  private def timed[A](clients: ParVector[Client], msg: String)(f: Client => A): ParVector[A] = {
+    println(s"$msg starting for ${clients.size} hosts")
+    val totalStart = System.currentTimeMillis()
+    val ret = clients.map { client =>
+      val start = System.currentTimeMillis()
+      val retIn = f(client)
+      val time = System.currentTimeMillis() - start
+      printlnsync(s"[${client.host}] $msg completed in ${time / 1000f}s")
+      retIn
+    }
+    val totalTime = System.currentTimeMillis() - totalStart
+    println(s"$msg for ${clients.size} hosts took ${totalTime / 1000f}s")
+    ret
+  }
+
+  private[this] def printlnsync(s: String) = synchronized { println(s) }
 
   private def ensureDir(path: String)(c: Client) = {
     def check(onFailure: => Unit) =
