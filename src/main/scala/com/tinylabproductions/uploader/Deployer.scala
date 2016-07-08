@@ -4,16 +4,15 @@ import java.nio.file.{Files, Paths}
 import java.time.{LocalDateTime, ZoneId}
 import java.util.concurrent.TimeUnit
 
+import com.tinylabproductions.uploader.utils.ZipUtils
 import net.schmizz.sshj.SSHClient
-import net.schmizz.sshj.common.StreamCopier
 import net.schmizz.sshj.sftp.{FileMode, RemoteResourceFilter, RemoteResourceInfo, SFTPClient}
-import net.schmizz.sshj.xfer.TransferListener
-import utils.ZipUtils
 
-import scala.concurrent.duration._
 import scala.collection.JavaConverters._
 import scala.collection.parallel.immutable.ParVector
+import scala.concurrent.duration._
 import scala.util.Try
+import com.tinylabproductions.uploader.utils._
 
 /**
   * Created by arturas on 2016-04-17.
@@ -65,7 +64,7 @@ object Deployer {
 
       val deployZip = s"$deploy/$zipName"
       val reporter = new SingleFileProgressReporter
-      timed(s"Uploading '$zip' (${zip.toFile.length()}) to '$deployZip'") {
+      timed(s"Uploading '$zip' (${zip.toFile.length().asHumanReadableSize}) to '$deployZip'") {
         println() // We need the newline.
         clients.foreach { client =>
           reporter.reportFTP(client.host, client.ftp) {
