@@ -14,27 +14,34 @@ class SingleFileProgressReporter {
     startTime: LocalDateTime, endTime: Option[LocalDateTime], transferred: Long, size: Long
   ) {
     def completed = transferred.toDouble / size
+    def remaining = size - transferred
     def isDone = transferred == size
   }
 
   private[this] var datum = Map.empty[String, Data]
   private[this] var previousReportLines = 0
 
+  private[this] def elapsedStr(totalSeconds: Long) = {
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds - minutes * 60
+    f"$minutes%02d:$seconds%02d"
+  }
+
   def printReport(): Unit = synchronized {
     val msg = datum.toVector.sortBy(_._1).map { case (name, data) =>
       val endTime = data.endTime.getOrElse(LocalDateTime.now())
       val totalS = ChronoUnit.SECONDS.between(data.startTime, endTime)
-      val totalM = ChronoUnit.MINUTES.between(data.startTime, endTime)
-      val seconds = totalS - totalM * 60
       val speed = if (totalS > 0) data.transferred / totalS else 0
+      val remainingEtaTime = if (speed == 0) None else Some(data.remaining / speed)
 
       val nameS = Chalk.on(name).bold()
       val transferredPercentage = if (data.isDone) "done" else f"${data.completed * 100}%2.1f%%"
       val transferred =
         f"${data.transferred.asHumanReadableSize}/${data.size.asHumanReadableSize
         }\t($transferredPercentage)"
-      val elapsed = f"$totalM%02d:$seconds%02d"
-      s"[$nameS] $transferred\t${speed.asHumanReadableSize}/s\t$elapsed"
+      val elapsed = elapsedStr(totalS)
+      val remaining = s"ETA ${remainingEtaTime.fold("--:--")(elapsedStr)}"
+      s"[$nameS] $transferred\t${speed.asHumanReadableSize}/s\t$elapsed\t$remaining"
     }
     print(Ansi.cursorUp(previousReportLines))
     print(Ansi.eraseScreenDown())
