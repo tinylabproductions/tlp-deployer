@@ -34,18 +34,26 @@ object Deployer {
 
     val zipName = s"${cfg.directoryToDeploy.getFileName}_${now.toString.replace(':', '_')}.zip"
     val zip = Paths.get(zipName)
+
+    val clients = timed("Connecting") {
+      cfg.server.hosts.par.map { host =>
+        val clientOpt = withRetries(s"connection to $host", cfg.server.connectRetries) {
+          val ssh = SSH(host, cfg.server.user, cfg.server.knownHosts)
+          Client(ssh, ssh.newSFTPClient(), host, cfg.server.timeout)
+        }
+        clientOpt.getOrElse {
+          throw new Exception(
+            s"Can't connect to $host in ${cfg.server.connectRetries} retries."
+          )
+        }
+      }
+    }
+
     timed(s"Compressing '${cfg.directoryToDeploy}' to '$zip'") {
       ZipUtils.pack(cfg.directoryToDeploy, zip)
     }
 
     try {
-      val clients = timed("Connecting") {
-        cfg.server.hosts.par.map { host =>
-          val ssh = SSH(host, cfg.server.user, cfg.server.knownHosts)
-          Client(ssh, ssh.newSFTPClient(), host, cfg.server.timeout)
-        }
-      }
-
       timed(clients, s"Checking if '${cfg.server.deployTo}' exists") {
         ensureDir(cfg.server.deployTo)
       }
@@ -90,6 +98,20 @@ object Deployer {
     finally {
       Files.delete(zip)
     }
+  }
+
+  private def withRetries[A](message: String, retries: Int)(f: => A): Option[A] = {
+    (0 to retries).foreach { tryIdx =>
+      try {
+        return Some(f)
+      }
+      catch {
+        case ex: Exception =>
+          val actionMsg = if (tryIdx + 1 == retries) "giving up" else "retrying"
+          println(s"Try ${tryIdx + 1} of $message failed with $ex, $actionMsg.")
+      }
+    }
+    None
   }
 
   private def timed[A](msg: String)(f: => A): A = {

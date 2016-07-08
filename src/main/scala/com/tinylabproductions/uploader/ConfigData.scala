@@ -11,7 +11,7 @@ import scala.util.Try
 case class ServerData(
   knownHosts: Path, hosts: Vector[String], user: String,
   deployTo: String, oldReleasesToKeep: Int,
-  timeout: FiniteDuration
+  timeout: FiniteDuration, connectRetries: Int
 )
 case class ConfigData(server: ServerData, directoryToDeploy: Path)
 
@@ -32,7 +32,8 @@ object HOCONReader {
         hosts = cfg.as[Vector[String]](key("hosts")), user = cfg.as[String](key("user")),
         deployTo = cfg.as[String](key("deploy_to")),
         oldReleasesToKeep = releasesToKeep,
-        timeout = cfg.as[FiniteDuration](key("timeout"))
+        timeout = cfg.as[FiniteDuration](key("timeout")),
+        connectRetries = cfg.as[Int](key("connect_retries"))
       )
     }
     ConfigData(server, directoryToDeploy)
