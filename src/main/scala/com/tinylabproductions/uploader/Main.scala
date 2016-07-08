@@ -4,11 +4,14 @@ import java.io.File
 import java.nio.file.Paths
 
 import com.typesafe.config.ConfigFactory
+import org.fusesource.jansi.AnsiConsole
 
 import scala.util.Try
 
 object Main {
   def main(args: Array[String]): Unit = {
+    AnsiConsole.systemInstall()
+
     args match {
       case Array(configFileS, directoryToDeployS) =>
         Try {

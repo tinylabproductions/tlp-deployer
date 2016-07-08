@@ -5,7 +5,9 @@ import java.time.{LocalDateTime, ZoneId}
 import java.util.concurrent.TimeUnit
 
 import net.schmizz.sshj.SSHClient
+import net.schmizz.sshj.common.StreamCopier
 import net.schmizz.sshj.sftp.{FileMode, RemoteResourceFilter, RemoteResourceInfo, SFTPClient}
+import net.schmizz.sshj.xfer.TransferListener
 import utils.ZipUtils
 
 import scala.concurrent.duration._
@@ -33,7 +35,7 @@ object Deployer {
     val now = LocalDateTime.now(ZoneId.of("UTC"))
 
     val zipName = s"${cfg.directoryToDeploy.getFileName}_${now.toString.replace(':', '_')}.zip"
-    val zip = Paths.get(zipName)
+    val zip = Paths.get(System.getProperty("java.io.tmpdir"), zipName)
 
     val clients = timed("Connecting") {
       cfg.server.hosts.par.map { host =>
@@ -62,8 +64,14 @@ object Deployer {
       timed(clients, s"Creating '$deploy'")(ensureDir(deploy))
 
       val deployZip = s"$deploy/$zipName"
-      timed(clients, s"Uploading '$zip' (${zip.toFile.length()}) to '$deployZip'") {
-        _.ftp.put(zip.toString, deployZip)
+      val reporter = new SingleFileProgressReporter
+      timed(s"Uploading '$zip' (${zip.toFile.length()}) to '$deployZip'") {
+        println() // We need the newline.
+        clients.foreach { client =>
+          reporter.reportFTP(client.host, client.ftp) {
+            client.ftp.put(zip.toString, deployZip)
+          }
+        }
       }
 
       timed(clients, s"Extracting '$deployZip'") {
