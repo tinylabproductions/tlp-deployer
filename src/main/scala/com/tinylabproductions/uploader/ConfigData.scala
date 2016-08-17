@@ -1,19 +1,83 @@
 package com.tinylabproductions.uploader
 
-import java.nio.file.{Paths, Path}
+import java.nio.file.{Path, Paths}
 
 import com.typesafe.config.Config
 import net.ceedubs.ficus.Ficus._
+import net.sf.sevenzipjbinding._
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
+import utils._
 
 case class ServerData(
   knownHosts: Path, hosts: Vector[String], user: String,
   deployTo: String, oldReleasesToKeep: Int,
   timeout: FiniteDuration, connectRetries: Int
 )
-case class ConfigData(server: ServerData, directoryToDeploy: Path)
+sealed trait CompressionFormat {
+  def extension: String
+  def toSevenZip: ArchiveFormat
+  def createArchive() = {
+    val out = SevenZip.openOutArchive(toSevenZip)
+    this.matched[CompressionFormat.WithLevel].foreach { wl =>
+      out.asInstanceOf[IOutFeatureSetLevel].setLevel(wl.level.level)
+    }
+    out.matched[IOutFeatureSetSolid].foreach(_.setSolid(true))
+    out.matched[IOutFeatureSetMultithreading].foreach { setting =>
+      val maxThreadCount = this match {
+        case _: CompressionFormat.SevenZip => 2
+        case _ => Int.MaxValue
+      }
+      val threadCount = Runtime.getRuntime.availableProcessors().min(maxThreadCount)
+      setting.setThreadCount(threadCount)
+    }
+    out
+  }
+}
+object CompressionFormat {
+  sealed trait WithLevel extends CompressionFormat {
+    def level: CompressionLevel
+  }
+  sealed trait TarFirst extends WithLevel {
+    def tarPath(p: Path) = p.resolveSibling(p.getFileName + ".tar")
+  }
+
+  case class Zip(level: CompressionLevel) extends WithLevel {
+    override def extension = "zip"
+    override def toSevenZip = ArchiveFormat.ZIP
+  }
+  case object Tar extends CompressionFormat {
+    override def extension = "tar"
+    override def toSevenZip = ArchiveFormat.TAR
+  }
+  case class TarGzip(level: CompressionLevel) extends TarFirst {
+    override def extension = "tar.gz"
+    override def toSevenZip = ArchiveFormat.GZIP
+  }
+  case class TarBz2(level: CompressionLevel) extends TarFirst {
+    override def extension = "tar.bz2"
+    override def toSevenZip = ArchiveFormat.BZIP2
+  }
+  case class SevenZip(level: CompressionLevel) extends WithLevel {
+    override def extension = "7z"
+    override def toSevenZip = ArchiveFormat.SEVEN_ZIP
+  }
+}
+
+sealed abstract class CompressionLevel(val level: Int)
+object CompressionLevel {
+  case object Copy extends CompressionLevel(0)
+  case object Fastest extends CompressionLevel(1)
+  case object Fast extends CompressionLevel(3)
+  case object Normal extends CompressionLevel(5)
+  case object Maximum extends CompressionLevel(7)
+  case object Ultra extends CompressionLevel(9)
+}
+
+case class ConfigData(
+  server: ServerData, compression: CompressionFormat, directoryToDeploy: Path
+)
 
 object HOCONReader {
   def read(cfg: Config, directoryToDeploy: Path) = Try {
@@ -36,6 +100,29 @@ object HOCONReader {
         connectRetries = cfg.as[Int](key("connect_retries"))
       )
     }
-    ConfigData(server, directoryToDeploy)
+    val compression = {
+      def key(k: String) = s"compression.$k"
+
+      val level = {
+        import CompressionLevel._
+        cfg.as[String](key("level")) match {
+          case "copy" => Copy
+          case "fastest" => Fastest
+          case "fast" => Fast
+          case "normal" => Normal
+          case "maximum" => Maximum
+          case "ultra" => Ultra
+        }
+      }
+
+      cfg.as[String](key("format")) match {
+        case "zip" => CompressionFormat.Zip(level)
+        case "tbz2" => CompressionFormat.TarBz2(level)
+        case "tgz" => CompressionFormat.TarGzip(level)
+        case "tar" => CompressionFormat.Tar
+        case "7z" => CompressionFormat.SevenZip(level)
+      }
+    }
+    ConfigData(server, compression, directoryToDeploy)
   }
 }

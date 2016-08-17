@@ -4,15 +4,17 @@ import java.nio.file.{Files, Paths}
 import java.time.{LocalDateTime, ZoneId}
 import java.util.concurrent.TimeUnit
 
-import com.tinylabproductions.uploader.utils.ZipUtils
+import com.tinylabproductions.uploader.reporting.{SingleFileProgressReporter, SyncOpReporter}
+import com.tinylabproductions.uploader.utils._
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.sftp.{FileMode, RemoteResourceFilter, RemoteResourceInfo, SFTPClient}
 
 import scala.collection.JavaConverters._
 import scala.collection.parallel.immutable.ParVector
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 import scala.util.Try
-import com.tinylabproductions.uploader.utils._
 
 /**
   * Created by arturas on 2016-04-17.
@@ -33,8 +35,17 @@ object Deployer {
   def deploy(cfg: ConfigData) = {
     val now = LocalDateTime.now(ZoneId.of("UTC"))
 
-    val zipName = s"${cfg.directoryToDeploy.getFileName}_${now.toString.replace(':', '_')}.zip"
+    val zipName =
+      s"${cfg.directoryToDeploy.getFileName}_${now.toString.replace(':', '_')}.${
+      cfg.compression.extension}"
     val zip = Paths.get(System.getProperty("java.io.tmpdir"), zipName)
+
+    val zipFuture = Future {
+      val (_, time) = timeAction {
+        SevenZipUtils.pack(cfg.directoryToDeploy, zip, cfg.compression)
+      }
+      time
+    }
 
     val clients = timed("Connecting") {
       cfg.server.hosts.par.map { host =>
@@ -50,9 +61,12 @@ object Deployer {
       }
     }
 
-    timed(s"Compressing '${cfg.directoryToDeploy}' to '$zip'") {
-      ZipUtils.pack(cfg.directoryToDeploy, zip)
-    }
+    println(
+      s"Waiting for compression to finish (${cfg.compression}) ('${
+      cfg.directoryToDeploy}' -> '$zip'..."
+    )
+    val zipTime = Await.result(zipFuture, 5.minutes)
+    println(f"Compression took ${zipTime / 1000f}%.2fs")
 
     try {
       timed(clients, s"Checking if '${cfg.server.deployTo}' exists") {
@@ -74,7 +88,16 @@ object Deployer {
       }
 
       timed(clients, s"Extracting '$deployZip'") {
-        _.cmd(s"unzip '$deployZip' -d '$deploy' && rm '$deployZip'")
+        _.cmd((cfg.compression match {
+          case _: CompressionFormat.Zip => s"unzip '$deployZip' -d '$deploy'"
+          case CompressionFormat.Tar => s"tar -xf '$deployZip' -C '$deploy'"
+          case _: CompressionFormat.TarBz2 => s"tar -xjf '$deployZip' -C '$deploy'"
+          case _: CompressionFormat.TarGzip => s"tar -xzf '$deployZip' -C '$deploy'"
+          case _: CompressionFormat.SevenZip =>
+            // x = eXtract
+            // -bd: Disable percentage indicator
+            s"7zr x -bd -o'$deploy' '$deployZip'"
+        }) + s" > '$deployZip.log' && rm '$deployZip'")
       }
 
       val currentLink = s"${cfg.server.deployTo}/current"
@@ -121,24 +144,28 @@ object Deployer {
     None
   }
 
-  private def timed[A](msg: String)(f: => A): A = {
-    print(s"$msg... ")
-    System.out.flush()
+  private def timeAction[A](f: => A): (A, Long) = {
     val start = System.currentTimeMillis()
     val ret = f
     val time = System.currentTimeMillis() - start
+    (ret, time)
+  }
+
+  private def timed[A](msg: String)(f: => A): A = {
+    print(s"$msg... ")
+    System.out.flush()
+    val (ret, time) = timeAction(f)
     println(s"[${time / 1000f}s]")
     ret
   }
 
   private def timed[A](clients: ParVector[Client], msg: String)(f: Client => A): ParVector[A] = {
     println(s"$msg starting for ${clients.size} hosts")
+    val reporter = new SyncOpReporter(clients.map(_.host).seq)
     val totalStart = System.currentTimeMillis()
     val ret = clients.map { client =>
-      val start = System.currentTimeMillis()
       val retIn = f(client)
-      val time = System.currentTimeMillis() - start
-      printlnsync(s"[${client.host}] $msg completed in ${time / 1000f}s")
+      reporter.hostCompleted(client.host)
       retIn
     }
     val totalTime = System.currentTimeMillis() - totalStart

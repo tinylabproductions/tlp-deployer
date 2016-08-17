@@ -1,6 +1,6 @@
 name := "TLP Deployer"
 
-version := "1.1.1"
+version := "1.2"
 
 scalaVersion := "2.11.7"
 
@@ -9,6 +9,8 @@ resolvers += Resolver.jcenterRepo
 val JschAgentProxyVer = "0.0.9"
 
 val BouncyCastleVer = "1.54"
+
+val SevenZipVer = "9.20-2.00beta"
 
 libraryDependencies ++= Seq(
   // Logging
@@ -29,5 +31,12 @@ libraryDependencies ++= Seq(
 
   // Cryptography libraries
   "org.bouncycastle" % "bcprov-jdk15on" % BouncyCastleVer,
-  "org.bouncycastle" % "bcpkix-jdk15on" % BouncyCastleVer
+  "org.bouncycastle" % "bcpkix-jdk15on" % BouncyCastleVer,
+
+  // 7zip
+  "net.sf.sevenzipjbinding" % "sevenzipjbinding" % SevenZipVer,
+  "net.sf.sevenzipjbinding" % "sevenzipjbinding-all-platforms" % SevenZipVer,
+
+  // Functional programming
+  "com.softwaremill.quicklens" %% "quicklens" % "1.4.7"
 )

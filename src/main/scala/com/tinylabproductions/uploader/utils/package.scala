@@ -1,5 +1,7 @@
 package com.tinylabproductions.uploader
 
+import scala.reflect.ClassTag
+
 /**
   * Created by arturas on 2016-07-08.
   */
@@ -16,5 +18,12 @@ package object utils {
     }
 
     def asHumanReadableSize = l.asHumanReadable(si = false)
+  }
+
+  implicit class AnyExts[A](val a: A) extends AnyVal {
+    def matched[B : ClassTag] = a match {
+      case b: B => Some(b)
+      case _ => None
+    }
   }
 }
