@@ -23,7 +23,9 @@ sealed trait CompressionFormat {
     this.matched[CompressionFormat.WithLevel].foreach { wl =>
       out.asInstanceOf[IOutFeatureSetLevel].setLevel(wl.level.level)
     }
-    out.matched[IOutFeatureSetSolid].foreach(_.setSolid(true))
+    this.matched[CompressionFormat.SevenZip].foreach { cf =>
+      out.asInstanceOf[IOutCreateArchive7z].setSolid(cf.solid)
+    }
     out.matched[IOutFeatureSetMultithreading].foreach { setting =>
       val maxThreadCount = this match {
         case _: CompressionFormat.SevenZip => 2
@@ -59,7 +61,7 @@ object CompressionFormat {
     override def extension = "tar.bz2"
     override def toSevenZip = ArchiveFormat.BZIP2
   }
-  case class SevenZip(level: CompressionLevel) extends WithLevel {
+  case class SevenZip(level: CompressionLevel, solid: Boolean) extends WithLevel {
     override def extension = "7z"
     override def toSevenZip = ArchiveFormat.SEVEN_ZIP
   }
@@ -120,7 +122,10 @@ object HOCONReader {
         case "tbz2" => CompressionFormat.TarBz2(level)
         case "tgz" => CompressionFormat.TarGzip(level)
         case "tar" => CompressionFormat.Tar
-        case "7z" => CompressionFormat.SevenZip(level)
+        case "7z" => CompressionFormat.SevenZip(
+          level,
+          cfg.as[Boolean]("7z.solid")
+        )
       }
     }
     ConfigData(server, compression, directoryToDeploy)
