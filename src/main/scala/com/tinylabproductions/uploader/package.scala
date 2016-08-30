@@ -2,6 +2,7 @@ package com.tinylabproductions
 
 import java.nio.charset.{Charset, StandardCharsets}
 import java.nio.file.Path
+import java.time.chrono.ChronoZonedDateTime
 
 import com.jcraft.jsch.agentproxy.AgentProxy
 import com.jcraft.jsch.agentproxy.sshj.AuthAgent
@@ -26,11 +27,12 @@ package object uploader {
   }
 
   implicit class ComparableExts[A <: Comparable[A]](val cmp: A) extends AnyVal with Ordered[A] {
-    def max(cmp2: A) = cmp.compareTo(cmp2) match {
-      case i if i <= 0 => cmp2
-      case _ => cmp
-    }
-
     override def compare(that: A) = cmp.compareTo(that)
+  }
+
+  implicit class ChronoZonedDateTimeExts(val thiz: ChronoZonedDateTime[_])
+  extends AnyVal with Ordered[ChronoZonedDateTime[_]]
+  {
+    override def compare(that: ChronoZonedDateTime[_]) = thiz.compareTo(that)
   }
 }

@@ -43,6 +43,7 @@ object Deployer {
     def parseTimestampFile(data: String, filename: String) = {
       try {
         OffsetDateTime.parse(data.trim, DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+          .atZoneSameInstant(ZoneOffset.UTC)
       }
       catch {
         case e: Exception =>
@@ -53,9 +54,9 @@ object Deployer {
       }
     }
 
-    case class LocalTimestampData(local: OffsetDateTime, remoteTsf: String)
-    case class RemoteTimestampData(latestDeployment: OffsetDateTime, clients: Vector[Client])
-    case class TimestampData(local: OffsetDateTime, remote: Option[RemoteTimestampData])
+    case class LocalTimestampData(local: ZonedDateTime, remoteTsf: String)
+    case class RemoteTimestampData(latestDeployment: ZonedDateTime, clients: Vector[Client])
+    case class TimestampData(local: ZonedDateTime, remote: Option[RemoteTimestampData])
 
     val localTimestampData =
       cfg.deployData.timestampFile.map { tsf =>
