@@ -78,7 +78,7 @@ object CompressionLevel {
 }
 
 case class DeployData(
-  timestampFile: Option[Path],
+  timestampFile: Option[String],
   directoryToDeploy: Path
 )
 
@@ -113,10 +113,10 @@ object HOCONReader {
       DeployData(
         timestampFile =
           if (ignoreTimestampFile) None
-          else (cfg.as[String](key("timestamp_file")).trim match {
+          else cfg.as[String](key("timestamp_file")).trim match {
             case "" => None
             case s => Some(s)
-          }).map(Paths.get(_)),
+          },
         directoryToDeploy = directoryToDeploy
       )
     }

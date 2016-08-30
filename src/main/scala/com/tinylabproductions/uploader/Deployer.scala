@@ -98,7 +98,10 @@ object Deployer {
     }
 
     val timestampData = localTimestampData.map { localTSD =>
-      val results = timed(clients, "Collecting remote deployment timestamps") { client =>
+      val results = timed(
+        clients,
+        s"Collecting remote deployment timestamps from '${localTSD.remoteTsf}'"
+      ) { client =>
         val remoteTSF = localTSD.remoteTsf.toString
         Option(client.ftp.statExistence(remoteTSF)).map { _ =>
           val data = client.ftp.getSFTPEngine.open(remoteTSF).readString()
