@@ -14,8 +14,10 @@ class StringReporter {
       s"[$nameS] $msg"
     }
     synchronized {
-      print(Ansi.cursorUp(previousReportLines))
-      print(Ansi.eraseScreenDown())
+      if (previousReportLines != 0) {
+        print(Ansi.cursorUp(previousReportLines))
+        print(Ansi.eraseScreenDown())
+      }
 
       msgs.foreach(println)
       previousReportLines = msgs.size

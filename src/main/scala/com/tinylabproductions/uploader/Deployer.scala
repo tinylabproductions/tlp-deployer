@@ -1,7 +1,9 @@
 package com.tinylabproductions.uploader
 
+import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
-import java.time.{LocalDateTime, ZoneId}
+import java.time._
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 import com.tinylabproductions.uploader.reporting.{SingleFileProgressReporter, SyncOpReporter}
@@ -35,14 +37,47 @@ object Deployer {
   def deploy(cfg: ConfigData) = {
     val now = LocalDateTime.now(ZoneId.of("UTC"))
 
+    val directoryToDeploy = cfg.deployData.directoryToDeploy
+    val currentLink = s"${cfg.server.deployTo}/current"
+
+    def parseTimestampFile(data: String, filename: String) = {
+      try {
+        OffsetDateTime.parse(data.trim, DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+      }
+      catch {
+        case e: Exception =>
+          throw new Exception(
+            s"Timestamp file '$filename' must contain a date in " +
+            s"DateTimeFormatter.ISO_OFFSET_DATE_TIME format!"
+          )
+      }
+    }
+
+    case class LocalTimestampData(local: OffsetDateTime, remoteTsf: String)
+    case class RemoteTimestampData(latestDeployment: OffsetDateTime, clients: Vector[Client])
+    case class TimestampData(local: OffsetDateTime, remote: Option[RemoteTimestampData])
+
+    val localTimestampData =
+      cfg.deployData.timestampFile.map { tsf =>
+        val localTsf = directoryToDeploy.resolve(tsf)
+        val remoteTsf = s"$currentLink/$tsf"
+        if (! localTsf.toFile.exists())
+          throw new Exception(
+            s"Can't read local timestamp file '$localTsf'! Please check your configuration."
+          )
+        val str = new String(Files.readAllBytes(localTsf), StandardCharsets.UTF_8)
+        val local = parseTimestampFile(str, tsf.toString)
+        LocalTimestampData(local, remoteTsf)
+      }
+
     val zipName =
-      s"${cfg.directoryToDeploy.getFileName}_${now.toString.replace(':', '_')}.${
+      s"${directoryToDeploy.getFileName}_${now.toString.replace(':', '_')}.${
       cfg.compression.extension}"
     val zip = Paths.get(System.getProperty("java.io.tmpdir"), zipName)
 
     val zipFuture = Future {
       val (_, time) = timeAction {
-        SevenZipUtils.pack(cfg.directoryToDeploy, zip, cfg.compression)
+        SevenZipUtils.pack(directoryToDeploy, zip, cfg.compression)
       }
       time
     }
@@ -61,9 +96,43 @@ object Deployer {
       }
     }
 
+    val timestampData = localTimestampData.map { localTSD =>
+      val results = timed(clients, "Collecting remote deployment timestamps") { client =>
+        val remoteTSF = localTSD.remoteTsf.toString
+        Option(client.ftp.statExistence(remoteTSF)).map { _ =>
+          val data = client.ftp.getSFTPEngine.open(remoteTSF).readString()
+          (parseTimestampFile(data, localTSD.remoteTsf), client)
+        }
+      }
+      val remote = results.foldLeft(Option.empty[RemoteTimestampData]) {
+        case (current @ Some(r), Some((b, bClient))) =>
+          if (b > r.latestDeployment)
+            Some(RemoteTimestampData(b, Vector(bClient)))
+          else if (b == r.latestDeployment)
+            Some(r.copy(clients = r.clients :+ bClient))
+          else
+            current
+        case (a, None) => a
+        case (None, Some((b, bClient))) => Some(RemoteTimestampData(b, Vector(bClient)))
+      }
+      TimestampData(localTSD.local, remote)
+    }
+
+    timestampData.foreach { tsd =>
+      tsd.remote.foreach { remote =>
+        val isNewer = tsd.local > remote.latestDeployment
+        if (!isNewer) throw new Exception(
+          s"Aborting upload of older package!\n" +
+          s"Local: ${tsd.local}\n" +
+          s"Remote: ${remote.latestDeployment} (on hosts: ${
+            remote.clients.map(_.host).mkString(", ")})"
+        )
+      }
+    }
+
     println(
       s"Waiting for compression to finish (${cfg.compression}) ('${
-      cfg.directoryToDeploy}' -> '$zip'..."
+      directoryToDeploy}' -> '$zip'..."
     )
     val zipTime = Await.result(zipFuture, 5.minutes)
     println(f"Compression took ${zipTime / 1000f}%.2fs")
@@ -100,7 +169,6 @@ object Deployer {
         }) + s" > '$deployZip.log' && rm '$deployZip'")
       }
 
-      val currentLink = s"${cfg.server.deployTo}/current"
       timed(clients, s"Linking '$currentLink' to '$deploy'") {
         _.cmd(s"ln -sfT '$deploy' '$currentLink'")
       }

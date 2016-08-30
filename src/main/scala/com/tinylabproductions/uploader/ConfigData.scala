@@ -77,12 +77,17 @@ object CompressionLevel {
   case object Ultra extends CompressionLevel(9)
 }
 
+case class DeployData(
+  timestampFile: Option[Path],
+  directoryToDeploy: Path
+)
+
 case class ConfigData(
-  server: ServerData, compression: CompressionFormat, directoryToDeploy: Path
+  server: ServerData, compression: CompressionFormat, deployData: DeployData
 )
 
 object HOCONReader {
-  def read(cfg: Config, directoryToDeploy: Path) = Try {
+  def read(cfg: Config, directoryToDeploy: Path, ignoreTimestampFile: Boolean) = Try {
     val server = {
       def key(k: String) = s"server.$k"
       def path(key: String) = Paths.get(cfg.as[String](key))
@@ -100,6 +105,19 @@ object HOCONReader {
         oldReleasesToKeep = releasesToKeep,
         timeout = cfg.as[FiniteDuration](key("timeout")),
         connectRetries = cfg.as[Int](key("connect_retries"))
+      )
+    }
+    val deploy = {
+      def key(k: String) = s"deploy.$k"
+
+      DeployData(
+        timestampFile =
+          if (ignoreTimestampFile) None
+          else (cfg.as[String](key("timestamp_file")).trim match {
+            case "" => None
+            case s => Some(s)
+          }).map(Paths.get(_)),
+        directoryToDeploy = directoryToDeploy
       )
     }
     val compression = {
@@ -128,6 +146,6 @@ object HOCONReader {
         )
       }
     }
-    ConfigData(server, compression, directoryToDeploy)
+    ConfigData(server, compression, deploy)
   }
 }
