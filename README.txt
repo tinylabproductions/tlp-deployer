@@ -4,10 +4,10 @@ It was written in mind with deployment to Linux servers in mind.
 
 It creates the following structure under deploy_dir:
   deploy_dir\
-  -- 2016-04-17T18:45:29.994
-  -- 2016-04-17T19:03:11.122
+  -- 2016-04-17T18_45_29.994
+  -- 2016-04-17T19_03_11.122
   # Latest release
-  -- current -> 2016-04-17T19:03:11.122
+  -- current -> 2016-04-17T19_03_11.122
 
 It also cleans up old releases.
 

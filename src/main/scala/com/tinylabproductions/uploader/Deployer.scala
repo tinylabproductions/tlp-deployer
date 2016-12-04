@@ -22,6 +22,8 @@ import scala.util.Try
   * Created by arturas on 2016-04-17.
   */
 object Deployer {
+  val ReleaseDirFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'hh_mm_ss.SSS")
+
   case class Client(ssh: SSHClient, ftp: SFTPClient, host: String, timeout: FiniteDuration) {
     def cmd(s: String) = {
       val cmd = ssh.startSession().exec(s)
@@ -146,7 +148,7 @@ object Deployer {
         ensureDir(cfg.server.deployTo)
       }
 
-      val deploy = s"${cfg.server.deployTo}/$now"
+      val deploy = s"${cfg.server.deployTo}/${now.format(ReleaseDirFormatter)}"
       timed(clients, s"Creating '$deploy'")(ensureDir(deploy))
 
       val deployZip = s"$deploy/$zipName"
@@ -183,7 +185,12 @@ object Deployer {
         val toDelete = c.ftp.ls(cfg.server.deployTo, new RemoteResourceFilter {
           override def accept(resource: RemoteResourceInfo) = resource.isDirectory
         }).asScala.
-          flatMap(r => Try((r, LocalDateTime.parse(r.getName))).toOption).
+          flatMap { r =>
+            def doTry(dateTimeFormatter: DateTimeFormatter) =
+              Try((r, LocalDateTime.parse(r.getName, dateTimeFormatter))).toOption
+            // Support new and old styles.
+            doTry(ReleaseDirFormatter) orElse doTry(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+          }.
           sortWith((a, b) => a._2.isBefore(b._2)).
           map(_._1).
           dropRight(cfg.server.oldReleasesToKeep)
