@@ -2,8 +2,10 @@ package com.tinylabproductions.uploader
 
 import java.io.File
 import java.nio.file.Paths
+import java.security.Security
 
 import com.typesafe.config.ConfigFactory
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.fusesource.jansi.AnsiConsole
 
 import scala.util.Try
@@ -39,9 +41,10 @@ object Main {
     }
   }
 
-  def selfName = new File(getClass.getProtectionDomain.getCodeSource.getLocation.toURI.getPath).getName
+  def selfName: String =
+    new File(getClass.getProtectionDomain.getCodeSource.getLocation.toURI.getPath).getName
 
-  def printHelp() = {
+  def printHelp(): Unit = {
     println(s"Usage: java -jar $selfName path_to_config.conf directory_to_deploy [options]")
     println()
     println(s"Options:")

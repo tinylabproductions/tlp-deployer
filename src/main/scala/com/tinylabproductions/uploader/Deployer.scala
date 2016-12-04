@@ -36,7 +36,18 @@ object Deployer {
     def err(s: String) = throw new Exception(s"on '$host': $s")
   }
 
-  def deploy(cfg: ConfigData) = {
+  def deploy(cfg: ConfigData): Unit = {
+    {
+      val dd = cfg.deployData
+      val missing = dd.requiredFiles.collect {
+        case path if Files.notExists(dd.directoryToDeploy.resolve(path)) =>
+          path
+      }
+      if (missing.nonEmpty) throw new Exception(
+        s"There are missing required files in ${dd.directoryToDeploy}: ${missing.mkStringEnum()}"
+      )
+    }
+
     val now = LocalDateTime.now(ZoneId.of("UTC"))
 
     val directoryToDeploy = cfg.deployData.directoryToDeploy
@@ -202,6 +213,10 @@ object Deployer {
           val toDeleteS = s"cd '${cfg.server.deployTo}' && rm -rf $rmArgs"
           c.cmd(toDeleteS)
         }
+      }
+
+      cfg.deployData.postDeploy.foreach { cmd =>
+        timed(clients, s"Running: '$cmd'")(_.cmd(cmd))
       }
     }
     finally {
