@@ -9,7 +9,10 @@ import java.util.concurrent.TimeUnit
 import com.tinylabproductions.uploader.reporting.{SingleFileProgressReporter, SyncOpReporter}
 import com.tinylabproductions.uploader.utils._
 import net.schmizz.sshj.SSHClient
+import net.schmizz.sshj.common.DisconnectReason
+import net.schmizz.sshj.connection.channel.direct.Session.Command
 import net.schmizz.sshj.sftp.{FileMode, RemoteResourceFilter, RemoteResourceInfo, SFTPClient}
+import net.schmizz.sshj.transport.TransportException
 
 import scala.collection.JavaConverters._
 import scala.collection.parallel.immutable.ParVector
@@ -23,7 +26,7 @@ import scala.util.Try
   */
 object Deployer {
   case class Client(ssh: SSHClient, ftp: SFTPClient, host: String, timeout: FiniteDuration) {
-    def cmd(s: String) = {
+    def cmd(s: String): Command = {
       val cmd = ssh.startSession().exec(s)
       cmd.join(timeout.toMillis, TimeUnit.MILLISECONDS)
       if (cmd.getExitStatus != 0)
@@ -34,7 +37,7 @@ object Deployer {
     def err(s: String) = throw new Exception(s"on '$host': $s")
   }
 
-  def deploy(cfg: ConfigData) = {
+  def deploy(cfg: ConfigData): Unit = {
     val now = LocalDateTime.now(ZoneId.of("UTC"))
 
     val directoryToDeploy = cfg.deployData.directoryToDeploy
@@ -83,6 +86,7 @@ object Deployer {
       time
     }
 
+    println(s"Using known hosts file: ${cfg.server.knownHosts}")
     val clients = timed("Connecting") {
       cfg.server.hosts.par.map { host =>
         val clientOpt = withRetries(s"connection to $host", cfg.server.connectRetries) {
@@ -202,15 +206,34 @@ object Deployer {
     }
   }
 
+  val RetryableReasons = Set(
+    DisconnectReason.CONNECTION_LOST,
+    DisconnectReason.SERVICE_NOT_AVAILABLE,
+    DisconnectReason.TOO_MANY_CONNECTIONS,
+    DisconnectReason.UNKNOWN
+  )
   private def withRetries[A](message: String, retries: Int)(f: => A): Option[A] = {
     (0 to retries).foreach { tryIdx =>
       try {
         return Some(f)
       }
       catch {
-        case ex: Exception =>
+        case ex: TransportException if RetryableReasons.contains(ex.getDisconnectReason) =>
           val actionMsg = if (tryIdx + 1 == retries) "giving up" else "retrying"
           println(s"Try ${tryIdx + 1} of $message failed with $ex, $actionMsg.")
+        case ex: TransportException
+          if ex.getDisconnectReason == DisconnectReason.HOST_KEY_NOT_VERIFIABLE
+        =>
+          Console.err.println(
+            """##################################################################################
+              |###
+              |### Can't verify host key! Please add host key
+              |### (you can use `ssh-keyscan -H your.host.name >> known_hosts_file`) to your
+              |### known hosts file specified in deployer configuration!
+              |###
+              |##################################################################################
+            """.stripMargin)
+          throw ex
       }
     }
     None

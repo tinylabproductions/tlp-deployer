@@ -9,7 +9,7 @@ import net.schmizz.sshj.SSHClient
   * Created by arturas on 2016-04-17.
   */
 object SSH {
-  def apply(hostname: String, user: String, knownHosts: Path) = {
+  def apply(hostname: String, user: String, knownHosts: Path): SSHClient = {
     val agentProxy = new AgentProxy(ConnectorFactory.getDefault.createConnector())
 
     val ssh = new SSHClient()

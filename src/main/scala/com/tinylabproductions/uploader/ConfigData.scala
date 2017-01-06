@@ -18,7 +18,7 @@ case class ServerData(
 sealed trait CompressionFormat {
   def extension: String
   def toSevenZip: ArchiveFormat
-  def createArchive() = {
+  def createArchive(): IOutCreateArchive[IOutItemAllFormats] = {
     val out = SevenZip.openOutArchive(toSevenZip)
     this.matched[CompressionFormat.WithLevel].foreach { wl =>
       out.asInstanceOf[IOutFeatureSetLevel].setLevel(wl.level.level)
@@ -87,10 +87,10 @@ case class ConfigData(
 )
 
 object HOCONReader {
-  def read(cfg: Config, directoryToDeploy: Path, ignoreTimestampFile: Boolean) = Try {
+  def read(cfgDir: Path, cfg: Config, directoryToDeploy: Path, ignoreTimestampFile: Boolean) = Try {
     val server = {
       def key(k: String) = s"server.$k"
-      def path(key: String) = Paths.get(cfg.as[String](key))
+      def path(key: String) = cfgDir.resolve(cfg.as[String](key))
 
       val releasesToKeepK = key("releases_to_keep")
       val releasesToKeep = cfg.as[Int](releasesToKeepK)

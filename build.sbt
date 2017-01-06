@@ -1,8 +1,8 @@
 name := "TLP Deployer"
 
-version := "1.3"
+version := "1.4"
 
-scalaVersion := "2.11.7"
+scalaVersion := "2.12.1"
 
 resolvers += Resolver.jcenterRepo
 
@@ -17,10 +17,10 @@ libraryDependencies ++= Seq(
   "org.slf4j" % "slf4j-simple" % "1.7.21",
 
   // Scala-friendly companion to Typesafe config
-  "com.iheart" %% "ficus" % "1.2.0",
+  "com.iheart" %% "ficus" % "1.4.0",
 
   // SSH and friends
-  "com.hierynomus" % "sshj" % "0.15.0",
+  "com.hierynomus" % "sshj" % "0.19.0",
   "com.jcraft" % "jsch.agentproxy.connector-factory" % JschAgentProxyVer,
   "com.jcraft" % "jsch.agentproxy.sshj" % JschAgentProxyVer exclude("net.schmizz", "sshj"),
   "com.jcraft" % "jsch.agentproxy.pageant" % JschAgentProxyVer,
@@ -38,5 +38,7 @@ libraryDependencies ++= Seq(
   "net.sf.sevenzipjbinding" % "sevenzipjbinding-all-platforms" % SevenZipVer,
 
   // Functional programming
-  "com.softwaremill.quicklens" %% "quicklens" % "1.4.7"
+  "com.softwaremill.quicklens" %% "quicklens" % "1.4.8"
 )
+
+enablePlugins(JavaAppPackaging)
