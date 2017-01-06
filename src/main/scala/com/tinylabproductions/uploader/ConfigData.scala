@@ -78,7 +78,9 @@ object CompressionLevel {
 }
 
 case class DeployData(
+  requiredFiles: Set[String],
   timestampFile: Option[String],
+  postDeploy: Vector[String],
   directoryToDeploy: Path
 )
 
@@ -111,12 +113,14 @@ object HOCONReader {
       def key(k: String) = s"deploy.$k"
 
       DeployData(
+        requiredFiles = cfg.as[Set[String]](key("required_paths")),
         timestampFile =
           if (ignoreTimestampFile) None
           else cfg.as[String](key("timestamp_file")).trim match {
             case "" => None
             case s => Some(s)
           },
+        postDeploy = cfg.as[Vector[String]](key("post_deploy")),
         directoryToDeploy = directoryToDeploy
       )
     }

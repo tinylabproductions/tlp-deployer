@@ -2,6 +2,7 @@ package com.tinylabproductions.uploader
 
 import java.io.File
 import java.nio.file.Paths
+import java.security.Security
 
 import com.typesafe.config.ConfigFactory
 import org.bouncycastle.jce.provider.BouncyCastleProvider

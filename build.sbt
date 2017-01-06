@@ -1,6 +1,6 @@
 name := "TLP Deployer"
 
-version := "1.4"
+version := "1.5"
 
 scalaVersion := "2.12.1"
 
@@ -30,8 +30,8 @@ libraryDependencies ++= Seq(
   "com.github.tomas-langer" % "chalk" % "1.0.2",
 
   // Cryptography libraries
-  "org.bouncycastle" % "bcprov-jdk15on" % BouncyCastleVer,
-  "org.bouncycastle" % "bcpkix-jdk15on" % BouncyCastleVer,
+//  "org.bouncycastle" % "bcprov-jdk15on" % BouncyCastleVer,
+//  "org.bouncycastle" % "bcpkix-jdk15on" % BouncyCastleVer,
 
   // 7zip
   "net.sf.sevenzipjbinding" % "sevenzipjbinding" % SevenZipVer,
