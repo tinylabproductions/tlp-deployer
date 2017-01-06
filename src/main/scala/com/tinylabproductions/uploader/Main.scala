@@ -40,11 +40,8 @@ object Main {
     }
   }
 
-  def selfName: String =
-    new File(getClass.getProtectionDomain.getCodeSource.getLocation.toURI.getPath).getName
-
   def printHelp(): Unit = {
-    println(s"Usage: java -jar $selfName path_to_config.conf directory_to_deploy [options]")
+    println(s"Usage: tlp-deployer path_to_config.conf directory_to_deploy [options]")
     println()
     println(s"Options:")
     println(s"  ${Opts.IgnoreTimestamp}")

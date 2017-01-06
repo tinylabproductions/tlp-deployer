@@ -13,8 +13,13 @@ It also cleans up old releases.
 
 Use sbt (http://www.scala-sbt.org/) to create an executable jar:
 
-> sbt assembly
+> sbt clean stage
+
+Output is placed in target/universal/stage
 
 Then run it with:
 
-> java -jar your_jar.jar
+> cd target/universal/stage
+> bin/tlp-deployer
+
+Or visit http://www.scala-sbt.org/sbt-native-packager/ for more info on packaging.
