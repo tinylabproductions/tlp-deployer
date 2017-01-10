@@ -1,6 +1,8 @@
-name := "TLP Deployer"
+name := "tlp-deployer"
 
-version := "1.5"
+organization := "com.tinylabproductions"
+
+version := "1.7"
 
 scalaVersion := "2.12.1"
 
@@ -30,15 +32,21 @@ libraryDependencies ++= Seq(
   "com.github.tomas-langer" % "chalk" % "1.0.2",
 
   // Cryptography libraries
-//  "org.bouncycastle" % "bcprov-jdk15on" % BouncyCastleVer,
-//  "org.bouncycastle" % "bcpkix-jdk15on" % BouncyCastleVer,
+  "org.bouncycastle" % "bcprov-jdk15on" % BouncyCastleVer,
+  "org.bouncycastle" % "bcpkix-jdk15on" % BouncyCastleVer,
 
   // 7zip
   "net.sf.sevenzipjbinding" % "sevenzipjbinding" % SevenZipVer,
   "net.sf.sevenzipjbinding" % "sevenzipjbinding-all-platforms" % SevenZipVer,
 
   // Functional programming
-  "com.softwaremill.quicklens" %% "quicklens" % "1.4.8"
+  "com.softwaremill.quicklens" %% "quicklens" % "1.4.8",
+
+  // Command line arguments parsing
+  "com.github.scopt" %% "scopt" % "3.5.0"
 )
+
+// Otherwise chalk dies when it cannot initialize console
+fork in run := true
 
 enablePlugins(JavaAppPackaging)

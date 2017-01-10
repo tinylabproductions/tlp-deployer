@@ -1,50 +1,45 @@
 package com.tinylabproductions.uploader
 
-import java.io.File
-import java.nio.file.Paths
+import java.security.Security
 
 import com.typesafe.config.ConfigFactory
 import org.fusesource.jansi.AnsiConsole
+import com.softwaremill.quicklens._
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 
 import scala.util.Try
 
 object Main {
-  object Opts {
-    val IgnoreTimestamp = "--ignore-timestamp"
-  }
-
   def main(args: Array[String]): Unit = {
     AnsiConsole.systemInstall()
+    Security.addProvider(new BouncyCastleProvider())
 
-    args match {
-      case Array(configFileS, directoryToDeployS, options @ _*) =>
+    CLIArgs.parser.parse(args, CLIArgs()) match {
+      case Some(cli) =>
         Try {
-          val cfgPath = Paths.get(configFileS)
-          val cfg = ConfigFactory.parseFile(cfgPath.toFile)
-          val toDeploy = Paths.get(directoryToDeployS)
+          val cfg = ConfigFactory.parseFile(cli.config.toFile)
+          val toDeploy = cli.directoryToDeploy
           if (!toDeploy.toFile.isDirectory)
             throw new RuntimeException(s"$toDeploy needs to be a directory!")
+          // need to call toRealPath, because otherwise it returns null parent on 'foo.conf' path.
+          val cfgDir = cli.config.toRealPath().getParent
           HOCONReader.read(
-            cfgPath.getParent, cfg, toDeploy,
-            ignoreTimestampFile = options.contains(Opts.IgnoreTimestamp)
+            cfgDir, cfg, toDeploy,
+            ignoreTimestampFile = cli.ignoreTimestamp
           )
-        }.flatten match {
+        }.flatten.map { cfg =>
+          val hosts = cli.overrideHosts
+          cfg
+            .modify(_.server.hosts).setToIf(hosts.nonEmpty)(hosts)
+            .modify(_.deployData.postDeploy).setToIf(cli.skipPostDeploy)(Vector.empty)
+        } match {
           case util.Success(cfg) =>
             Deployer.deploy(cfg)
           case util.Failure(err) =>
             throw err
         }
-      case _ =>
-        printHelp()
-        System.exit(2)
+      case None =>
+        System.exit(1)
     }
-  }
-
-  def printHelp(): Unit = {
-    println(s"Usage: tlp-deployer path_to_config.conf directory_to_deploy [options]")
-    println()
-    println(s"Options:")
-    println(s"  ${Opts.IgnoreTimestamp}")
-    println(s"     Deploys even if timestamp says you are deploying an older version.")
   }
 }

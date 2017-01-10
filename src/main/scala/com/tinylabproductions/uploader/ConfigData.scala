@@ -42,7 +42,7 @@ object CompressionFormat {
     def level: CompressionLevel
   }
   sealed trait TarFirst extends WithLevel {
-    def tarPath(p: Path) = p.resolveSibling(p.getFileName + ".tar")
+    def tarPath(p: Path): Path = p.resolveSibling(p.getFileName + ".tar")
   }
 
   case class Zip(level: CompressionLevel) extends WithLevel {
@@ -89,7 +89,9 @@ case class ConfigData(
 )
 
 object HOCONReader {
-  def read(cfgDir: Path, cfg: Config, directoryToDeploy: Path, ignoreTimestampFile: Boolean) = Try {
+  def read(
+    cfgDir: Path, cfg: Config, directoryToDeploy: Path, ignoreTimestampFile: Boolean
+  ) = Try {
     val server = {
       def key(k: String) = s"server.$k"
       def path(key: String) = cfgDir.resolve(cfg.as[String](key))

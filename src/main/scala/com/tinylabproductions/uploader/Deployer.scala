@@ -231,8 +231,7 @@ object Deployer {
   val RetryableReasons = Set(
     DisconnectReason.CONNECTION_LOST,
     DisconnectReason.SERVICE_NOT_AVAILABLE,
-    DisconnectReason.TOO_MANY_CONNECTIONS,
-    DisconnectReason.UNKNOWN
+    DisconnectReason.TOO_MANY_CONNECTIONS
   )
   private def withRetries[A](message: String, retries: Int)(f: => A): Option[A] = {
     (0 to retries).foreach { tryIdx =>

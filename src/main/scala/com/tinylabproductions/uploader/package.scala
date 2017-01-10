@@ -15,11 +15,11 @@ package object uploader {
   }
 
   implicit class PathExts(val p: Path) extends AnyVal {
-    def toUnixPathStr = p.toString.replace('\\', '/')
+    def toUnixPathStr: String = p.toString.replace('\\', '/')
   }
 
   implicit class RemoteFileExts(val rf: RemoteFile) extends AnyVal {
-    def readString(charset: Charset=StandardCharsets.UTF_8) = {
+    def readString(charset: Charset = StandardCharsets.UTF_8): String = {
       val arr = new Array[Byte](rf.length().toInt)
       rf.read(0, arr, 0, arr.length)
       new String(arr, charset)
