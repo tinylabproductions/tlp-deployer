@@ -2,7 +2,7 @@ name := "tlp-deployer"
 
 organization := "com.tinylabproductions"
 
-version := "1.7"
+version := "1.8"
 
 scalaVersion := "2.12.1"
 
