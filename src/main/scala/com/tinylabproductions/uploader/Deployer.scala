@@ -1,5 +1,7 @@
 package com.tinylabproductions.uploader
 
+import java.io.IOException
+import java.net.ConnectException
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
 import java.time._
@@ -228,18 +230,30 @@ object Deployer {
     }
   }
 
-  val RetryableReasons = Set(
-    DisconnectReason.CONNECTION_LOST,
-    DisconnectReason.SERVICE_NOT_AVAILABLE,
-    DisconnectReason.TOO_MANY_CONNECTIONS
-  )
+  object RetryableException {
+    val RetryableReasons = Set(
+      DisconnectReason.CONNECTION_LOST,
+      DisconnectReason.SERVICE_NOT_AVAILABLE,
+      DisconnectReason.TOO_MANY_CONNECTIONS
+    )
+
+    def unapply(t: Throwable): Option[IOException] = t match {
+      case ex: TransportException if RetryableReasons.contains(ex.getDisconnectReason) =>
+        Some(ex)
+      case ex: ConnectException =>
+        Some(ex)
+      case _ =>
+        None
+    }
+  }
+
   private def withRetries[A](message: String, retries: Int)(f: => A): Option[A] = {
     (0 to retries).foreach { tryIdx =>
       try {
         return Some(f)
       }
       catch {
-        case ex: TransportException if RetryableReasons.contains(ex.getDisconnectReason) =>
+        case RetryableException(ex) =>
           val actionMsg = if (tryIdx + 1 == retries) "giving up" else "retrying"
           println(s"Try ${tryIdx + 1} of $message failed with $ex, $actionMsg.")
         case ex: TransportException
