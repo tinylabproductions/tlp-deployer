@@ -2,7 +2,6 @@ package com.tinylabproductions.uploader.reporting
 
 import java.time.LocalDateTime
 
-import com.github.tomaslanger.chalk.Chalk
 import com.tinylabproductions.uploader.utils._
 import net.schmizz.sshj.common.StreamCopier.Listener
 import net.schmizz.sshj.sftp.SFTPClient
