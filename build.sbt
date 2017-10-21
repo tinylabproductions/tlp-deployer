@@ -4,7 +4,7 @@ organization := "com.tinylabproductions"
 
 version := "1.9"
 
-scalaVersion := "2.12.2"
+scalaVersion := "2.12.3"
 
 resolvers += Resolver.jcenterRepo
 
@@ -29,7 +29,6 @@ libraryDependencies ++= Seq(
   "com.jcraft" % "jsch.agentproxy.sshagent" % JschAgentProxyVer,
 
   // Terminal handling
-//  "com.github.tomas-langer" % "chalk" % "1.0.2",
   "org.fusesource.jansi" % "jansi" % "1.16",
 
   // Cryptography libraries
