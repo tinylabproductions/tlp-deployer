@@ -27,7 +27,7 @@ import scala.util.Try
   * Created by arturas on 2016-04-17.
   */
 object Deployer {
-  val ReleaseDirFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'hh_mm_ss.SSS")
+  val ReleaseDirFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH_mm_ss.SSS")
 
   case class Client(ssh: SSHClient, ftp: SFTPClient, host: String, timeout: FiniteDuration) {
     def cmd(s: String): Command = {

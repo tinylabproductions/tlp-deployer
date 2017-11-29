@@ -2,7 +2,7 @@ name := "tlp-deployer"
 
 organization := "com.tinylabproductions"
 
-version := "1.7.2"
+version := "1.9.1"
 
 scalaVersion := "2.12.3"
 
@@ -29,7 +29,7 @@ libraryDependencies ++= Seq(
   "com.jcraft" % "jsch.agentproxy.sshagent" % JschAgentProxyVer,
 
   // Terminal handling
-  "com.github.tomas-langer" % "chalk" % "1.0.2",
+  "org.fusesource.jansi" % "jansi" % "1.16",
 
   // Cryptography libraries
   "org.bouncycastle" % "bcprov-jdk15on" % BouncyCastleVer,
