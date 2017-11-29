@@ -196,6 +196,10 @@ object Deployer {
         _.cmd(s"ln -sfT '$deploy' '$currentLink'")
       }
 
+      cfg.deployData.postDeploy.foreach { cmd =>
+        timed(clients, s"Running: '$cmd'")(_.cmd(cmd))
+      }
+
       timed(
         clients, s"Cleaning up old deploys (keeping ${cfg.server.oldReleasesToKeep} releases)"
       ) { c =>
@@ -219,10 +223,6 @@ object Deployer {
           val toDeleteS = s"cd '${cfg.server.deployTo}' && rm -rf $rmArgs"
           c.cmd(toDeleteS)
         }
-      }
-
-      cfg.deployData.postDeploy.foreach { cmd =>
-        timed(clients, s"Running: '$cmd'")(_.cmd(cmd))
       }
     }
     finally {

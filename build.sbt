@@ -2,9 +2,9 @@ name := "tlp-deployer"
 
 organization := "com.tinylabproductions"
 
-version := "1.7.1"
+version := "1.7.2"
 
-scalaVersion := "2.12.2"
+scalaVersion := "2.12.3"
 
 resolvers += Resolver.jcenterRepo
 
