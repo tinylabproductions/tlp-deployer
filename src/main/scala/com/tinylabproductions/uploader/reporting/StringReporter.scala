@@ -12,7 +12,7 @@ class StringReporter {
   def printReport(data: TraversableOnce[(String, String)]): Unit = {
     val msgs = data.toVector.sortBy(_._1).map { case (name, msg) =>
 
-      val nameS = Ansi.Modifier.BOLD(name)
+      val nameS = Ansi.Color.GREEN(name)
       s"[$nameS] $msg"
     }
     synchronized {
