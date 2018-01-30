@@ -2,9 +2,9 @@ name := "tlp-deployer"
 
 organization := "com.tinylabproductions"
 
-version := "1.9.1"
+version := "1.10.0"
 
-scalaVersion := "2.12.3"
+scalaVersion := "2.12.4"
 
 resolvers += Resolver.jcenterRepo
 
@@ -50,3 +50,7 @@ libraryDependencies ++= Seq(
 fork in run := true
 
 enablePlugins(JavaAppPackaging)
+
+enablePlugins(BuildInfoPlugin)
+buildInfoKeys := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion)
+buildInfoPackage := "build_info"

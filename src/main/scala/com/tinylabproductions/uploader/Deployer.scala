@@ -13,7 +13,7 @@ import com.tinylabproductions.uploader.utils._
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.common.DisconnectReason
 import net.schmizz.sshj.connection.channel.direct.Session.Command
-import net.schmizz.sshj.sftp.{FileMode, RemoteResourceFilter, RemoteResourceInfo, SFTPClient}
+import net.schmizz.sshj.sftp.{FileMode, RemoteResourceInfo, SFTPClient}
 import net.schmizz.sshj.transport.TransportException
 
 import scala.collection.JavaConverters._
@@ -27,7 +27,8 @@ import scala.util.Try
   * Created by arturas on 2016-04-17.
   */
 object Deployer {
-  val ReleaseDirFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH_mm_ss.SSS")
+  val ReleaseDirFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH_mm_ss.SSS")
 
   case class Client(ssh: SSHClient, ftp: SFTPClient, host: String, timeout: FiniteDuration) {
     def cmd(s: String): Command = {
@@ -42,65 +43,6 @@ object Deployer {
   }
 
   def deploy(cfg: ConfigData): Unit = {
-    {
-      val dd = cfg.deployData
-      val missing = dd.requiredFiles.collect {
-        case path if Files.notExists(dd.directoryToDeploy.resolve(path)) =>
-          path
-      }
-      if (missing.nonEmpty) throw new Exception(
-        s"There are missing required files in ${dd.directoryToDeploy}: ${missing.mkStringEnum()}"
-      )
-    }
-
-    val now = LocalDateTime.now(ZoneId.of("UTC"))
-
-    val directoryToDeploy = cfg.deployData.directoryToDeploy
-    val currentLink = s"${cfg.server.deployTo}/current"
-
-    def parseTimestampFile(data: String, filename: String) = {
-      try {
-        OffsetDateTime.parse(data.trim, DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-          .atZoneSameInstant(ZoneOffset.UTC)
-      }
-      catch {
-        case e: Exception =>
-          throw new Exception(
-            s"Timestamp file '$filename' must contain a date in " +
-            s"DateTimeFormatter.ISO_OFFSET_DATE_TIME format!"
-          )
-      }
-    }
-
-    case class LocalTimestampData(local: ZonedDateTime, remoteTsf: String)
-    case class RemoteTimestampData(latestDeployment: ZonedDateTime, clients: Vector[Client])
-    case class TimestampData(local: ZonedDateTime, remote: Option[RemoteTimestampData])
-
-    val localTimestampData =
-      cfg.deployData.timestampFile.map { tsf =>
-        val localTsf = directoryToDeploy.resolve(tsf)
-        val remoteTsf = s"$currentLink/$tsf"
-        if (! localTsf.toFile.exists())
-          throw new Exception(
-            s"Can't read local timestamp file '$localTsf'! Please check your configuration."
-          )
-        val str = new String(Files.readAllBytes(localTsf), StandardCharsets.UTF_8)
-        val local = parseTimestampFile(str, tsf.toString)
-        LocalTimestampData(local, remoteTsf)
-      }
-
-    val zipName =
-      s"${directoryToDeploy.getFileName}_${now.toString.replace(':', '_')}.${
-      cfg.compression.extension}"
-    val zip = Paths.get(System.getProperty("java.io.tmpdir"), zipName)
-
-    val zipFuture = Future {
-      val (_, time) = timeAction {
-        SevenZipUtils.pack(directoryToDeploy, zip, cfg.compression)
-      }
-      time
-    }
-
     println(s"Using known hosts file: ${cfg.server.knownHosts}")
     val clients = timed("Connecting") {
       cfg.server.hosts.par.map { host =>
@@ -114,6 +56,102 @@ object Deployer {
           )
         }
       }
+    }
+
+    // Do deploy
+    cfg.deployData.deploy.foreach { deployCfg =>
+      deploy(deployCfg, cfg.server, cfg.compression, clients)
+    }
+
+    // Do post deploy
+    cfg.deployData.postDeploy.foreach { postDeployCfg =>
+      postDeploy(postDeployCfg, clients)
+    }
+
+    timed(
+      clients, s"Cleaning up old deploys (keeping ${cfg.server.oldReleasesToKeep} releases)"
+    ) { c =>
+      val toDelete =
+        c.ftp.ls(cfg.server.deployTo, (_: RemoteResourceInfo).isDirectory)
+          .asScala
+          .flatMap { r =>
+            def doTry(dateTimeFormatter: DateTimeFormatter) =
+              Try((r, LocalDateTime.parse(r.getName, dateTimeFormatter))).toOption
+            // Support new and old styles.
+            doTry(ReleaseDirFormatter) orElse doTry(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+          }
+          .sortWith((a, b) => a._2.isBefore(b._2))
+          .map(_._1)
+          .dropRight(cfg.server.oldReleasesToKeep)
+
+      if (toDelete.nonEmpty) {
+        val rmArgs = toDelete.map(_.getName).mkString("'", "' '", "'")
+        /* cd to a directory first to prevent accidental deletion of / in case something goes wrong
+         * http://serverfault.com/questions/587102/monday-morning-mistake-sudo-rm-rf-no-preserve-root */
+        val toDeleteS = s"cd '${cfg.server.deployTo}' && rm -rf $rmArgs"
+        c.cmd(toDeleteS)
+      }
+    }
+  }
+
+  def deploy(
+    cfg: DeployStage, serverCfg: ServerData, compression: CompressionFormat,
+    clients: ParVector[Client]
+  ): Unit = {
+    def parseTimestampFile(data: String, filename: String) = {
+      try {
+        OffsetDateTime.parse(data.trim, DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+          .atZoneSameInstant(ZoneOffset.UTC)
+      }
+      catch {
+        case e: Exception =>
+          throw new Exception(
+            s"Timestamp file '$filename' must contain a date in " +
+              s"DateTimeFormatter.ISO_OFFSET_DATE_TIME format!"
+          )
+      }
+    }
+
+    case class LocalTimestampData(local: ZonedDateTime, remoteTsf: String)
+    case class RemoteTimestampData(latestDeployment: ZonedDateTime, clients: Vector[Client])
+    case class TimestampData(local: ZonedDateTime, remote: Option[RemoteTimestampData])
+
+    val missing = cfg.requiredFiles.collect {
+      case path if Files.notExists(cfg.directoryToDeploy.resolve(path)) =>
+        path
+    }
+    if (missing.nonEmpty) throw new Exception(
+      s"There are missing required files in ${cfg.directoryToDeploy}: " +
+        s"${missing.mkStringEnum()}"
+    )
+
+    val now = LocalDateTime.now(ZoneId.of("UTC"))
+    val directoryToDeploy = cfg.directoryToDeploy
+    val currentLink = s"${serverCfg.deployTo}/current"
+
+    val localTimestampData =
+      cfg.timestampFile.map { tsf =>
+        val localTsf = directoryToDeploy.resolve(tsf)
+        val remoteTsf = s"$currentLink/$tsf"
+        if (! localTsf.toFile.exists())
+          throw new Exception(
+            s"Can't read local timestamp file '$localTsf'! Please check your configuration."
+          )
+        val str = new String(Files.readAllBytes(localTsf), StandardCharsets.UTF_8)
+        val local = parseTimestampFile(str, tsf.toString)
+        LocalTimestampData(local, remoteTsf)
+      }
+
+    val zipName =
+      s"${directoryToDeploy.getFileName}_${now.toString.replace(':', '_')}.${
+        compression.extension}"
+    val zip = Paths.get(System.getProperty("java.io.tmpdir"), zipName)
+
+    val zipFuture = Future {
+      val (_, time) = timeAction {
+        SevenZipUtils.pack(directoryToDeploy, zip, compression)
+      }
+      time
     }
 
     val timestampData = localTimestampData.map { localTSD =>
@@ -146,29 +184,29 @@ object Deployer {
         val isNewer = tsd.local > remote.latestDeployment
         if (!isNewer) throw new Exception(
           s"Aborting upload of older package!\n" +
-          s"Local: ${tsd.local}\n" +
-          s"Remote: ${remote.latestDeployment} (on hosts: ${
-            remote.clients.map(_.host).mkString(", ")})"
+            s"Local: ${tsd.local}\n" +
+            s"Remote: ${remote.latestDeployment} (on hosts: ${
+              remote.clients.map(_.host).mkString(", ")})"
         )
       }
     }
 
     println(
-      s"Waiting for compression to finish (${cfg.compression}) ('${
-      directoryToDeploy}' -> '$zip'..."
+      s"Waiting for compression to finish ($compression) ('$directoryToDeploy' -> '$zip'..."
     )
     val zipTime = Await.result(zipFuture, 5.minutes)
     println(f"Compression took ${zipTime / 1000f}%.2fs")
 
+    val deploy = s"${serverCfg.deployTo}/${now.format(ReleaseDirFormatter)}"
+    val deployZip = s"$deploy/$zipName"
+
     try {
-      timed(clients, s"Checking if '${cfg.server.deployTo}' exists") {
-        ensureDir(cfg.server.deployTo)
+      timed(clients, s"Checking if '${serverCfg.deployTo}' exists") {
+        ensureDir(serverCfg.deployTo)
       }
 
-      val deploy = s"${cfg.server.deployTo}/${now.format(ReleaseDirFormatter)}"
       timed(clients, s"Creating '$deploy'")(ensureDir(deploy))
 
-      val deployZip = s"$deploy/$zipName"
       val reporter = new SingleFileProgressReporter
       timed(s"Uploading '$zip' (${zip.toFile.length().asHumanReadableSize}) to '$deployZip'") {
         println() // We need the newline.
@@ -178,55 +216,32 @@ object Deployer {
           }
         }
       }
-
-      timed(clients, s"Extracting '$deployZip'") {
-        _.cmd((cfg.compression match {
-          case _: CompressionFormat.Zip => s"unzip '$deployZip' -d '$deploy'"
-          case CompressionFormat.Tar => s"tar -xf '$deployZip' -C '$deploy'"
-          case _: CompressionFormat.TarBz2 => s"tar -xjf '$deployZip' -C '$deploy'"
-          case _: CompressionFormat.TarGzip => s"tar -xzf '$deployZip' -C '$deploy'"
-          case _: CompressionFormat.SevenZip =>
-            // x = eXtract
-            // -bd: Disable percentage indicator
-            s"7zr x -bd -o'$deploy' '$deployZip'"
-        }) + s" > '$deployZip.log' && rm '$deployZip'")
-      }
-
-      timed(clients, s"Linking '$currentLink' to '$deploy'") {
-        _.cmd(s"ln -sfT '$deploy' '$currentLink'")
-      }
-
-      cfg.deployData.postDeploy.foreach { cmd =>
-        timed(clients, s"Running: '$cmd'")(_.cmd(cmd))
-      }
-
-      timed(
-        clients, s"Cleaning up old deploys (keeping ${cfg.server.oldReleasesToKeep} releases)"
-      ) { c =>
-        val toDelete = c.ftp.ls(cfg.server.deployTo, new RemoteResourceFilter {
-          override def accept(resource: RemoteResourceInfo) = resource.isDirectory
-        }).asScala.
-          flatMap { r =>
-            def doTry(dateTimeFormatter: DateTimeFormatter) =
-              Try((r, LocalDateTime.parse(r.getName, dateTimeFormatter))).toOption
-            // Support new and old styles.
-            doTry(ReleaseDirFormatter) orElse doTry(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-          }.
-          sortWith((a, b) => a._2.isBefore(b._2)).
-          map(_._1).
-          dropRight(cfg.server.oldReleasesToKeep)
-
-        if (toDelete.nonEmpty) {
-          val rmArgs = toDelete.map(_.getName).mkString("'", "' '", "'")
-          /* cd to a directory first to prevent accidental deletion of / in case something goes wrong
-           * http://serverfault.com/questions/587102/monday-morning-mistake-sudo-rm-rf-no-preserve-root */
-          val toDeleteS = s"cd '${cfg.server.deployTo}' && rm -rf $rmArgs"
-          c.cmd(toDeleteS)
-        }
-      }
     }
     finally {
       Files.delete(zip)
+    }
+
+    timed(clients, s"Extracting '$deployZip'") {
+      _.cmd((compression match {
+        case _: CompressionFormat.Zip => s"unzip '$deployZip' -d '$deploy'"
+        case CompressionFormat.Tar => s"tar -xf '$deployZip' -C '$deploy'"
+        case _: CompressionFormat.TarBz2 => s"tar -xjf '$deployZip' -C '$deploy'"
+        case _: CompressionFormat.TarGzip => s"tar -xzf '$deployZip' -C '$deploy'"
+        case _: CompressionFormat.SevenZip =>
+          // x = eXtract
+          // -bd: Disable percentage indicator
+          s"7zr x -bd -o'$deploy' '$deployZip'"
+      }) + s" > '$deployZip.log' && rm '$deployZip'")
+    }
+
+    timed(clients, s"Linking '$currentLink' to '$deploy'") {
+      _.cmd(s"ln -sfT '$deploy' '$currentLink'")
+    }
+  }
+
+  def postDeploy(cfg: PostDeployStage, clients: ParVector[Deployer.Client]): Unit = {
+    cfg.postDeploy.foreach { cmd =>
+      timed(clients, s"Running: '$cmd'")(_.cmd(cmd))
     }
   }
 
@@ -303,10 +318,10 @@ object Deployer {
     ret
   }
 
-  private[this] def printlnsync(s: String) = synchronized { println(s) }
+  private[this] def printlnsync(s: String): Unit = synchronized { println(s) }
 
-  private def ensureDir(path: String)(c: Client) = {
-    def check(onFailure: => Unit) =
+  private def ensureDir(path: String)(c: Client): Unit = {
+    def check(onFailure: => Unit): Unit =
       Option(c.ftp.statExistence(path)) match {
         case None =>
           onFailure

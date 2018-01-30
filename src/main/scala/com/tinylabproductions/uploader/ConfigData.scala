@@ -1,14 +1,14 @@
 package com.tinylabproductions.uploader
 
-import java.nio.file.{Path, Paths}
+import java.nio.file.Path
 
+import com.tinylabproductions.uploader.utils._
 import com.typesafe.config.Config
 import net.ceedubs.ficus.Ficus._
 import net.sf.sevenzipjbinding._
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
-import utils._
 
 case class ServerData(
   knownHosts: Path, hosts: Vector[String], user: String,
@@ -77,12 +77,14 @@ object CompressionLevel {
   case object Ultra extends CompressionLevel(9)
 }
 
-case class DeployData(
+case class DeployStage(
   requiredFiles: Set[String],
   timestampFile: Option[String],
-  postDeploy: Vector[String],
   directoryToDeploy: Path
 )
+case class PostDeployStage(postDeploy: Vector[String])
+
+case class DeployData(deploy: Option[DeployStage], postDeploy: Option[PostDeployStage])
 
 case class ConfigData(
   server: ServerData, compression: CompressionFormat, deployData: DeployData
@@ -114,7 +116,7 @@ object HOCONReader {
     val deploy = {
       def key(k: String) = s"deploy.$k"
 
-      DeployData(
+      val deployStage = DeployStage(
         requiredFiles = cfg.as[Set[String]](key("required_paths")),
         timestampFile =
           if (ignoreTimestampFile) None
@@ -122,9 +124,13 @@ object HOCONReader {
             case "" => None
             case s => Some(s)
           },
-        postDeploy = cfg.as[Vector[String]](key("post_deploy")),
         directoryToDeploy = directoryToDeploy
       )
+      val postDeployStage = PostDeployStage(
+        postDeploy = cfg.as[Vector[String]](key("post_deploy"))
+      )
+
+      DeployData(Some(deployStage), Some(postDeployStage))
     }
     val compression = {
       def key(k: String) = s"compression.$k"

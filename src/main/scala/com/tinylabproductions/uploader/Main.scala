@@ -31,7 +31,8 @@ object Main {
           val hosts = cli.overrideHosts
           cfg
             .modify(_.server.hosts).setToIf(hosts.nonEmpty)(hosts)
-            .modify(_.deployData.postDeploy).setToIf(cli.skipPostDeploy)(Vector.empty)
+            .modify(_.deployData.deploy).setToIf(cli.skipDeploy)(None)
+            .modify(_.deployData.postDeploy).setToIf(cli.skipPostDeploy)(None)
         } match {
           case util.Success(cfg) =>
             Deployer.deploy(cfg)
